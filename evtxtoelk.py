@@ -24,9 +24,9 @@ class EvtxToElk:
             return False
 
     @staticmethod
-    def evtx_to_elk(filename, elk_ip, elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}):
+    def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100):
         bulk_queue = []
-        es = Elasticsearch([elk_ip])
+        es = Elasticsearch(hosts=[elk_ip+':'+elk_port], timeout=es_timeout)
         with open(filename) as infile:
             with contextlib.closing(mmap.mmap(infile.fileno(), 0, access=mmap.ACCESS_READ)) as buf:
                 fh = FileHeader(buf, 0x0)
@@ -101,7 +101,7 @@ class EvtxToElk:
                         })
 
                         if len(bulk_queue) == bulk_queue_len_threshold:
-                            print('Bulkingrecords to ES: ' + str(len(bulk_queue)))
+                            print('Bulkingrecords to ES: ' + filename + ':' + str(len(bulk_queue)))
                             # start parallel bulking to ElasticSearch, default 500 chunks;
                             if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue):
                                 bulk_queue = []
@@ -118,7 +118,7 @@ class EvtxToElk:
 
                 # Check for any remaining records in the bulk queue
                 if len(bulk_queue) > 0:
-                    print('Bulking final set of records to ES: ' + str(len(bulk_queue)))
+                    print('Bulking final set of records to ES: ' + filename + ':' + str(len(bulk_queue)))
                     if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue):
                         bulk_queue = []
                     else:
@@ -131,10 +131,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Add arguments
     parser.add_argument('evtxfile', help="Evtx file to parse")
-    parser.add_argument('elk_ip', default="localhost", help="IP (and port) of ELK instance")
+    parser.add_argument('elk_ip', default="localhost", help="IP of ELK instance")
+    parser.add_argument('-p', '--elk_port', default="9200", help="Port of ELK instance")
     parser.add_argument('-i', default="hostlogs", help="ELK index to load data into")
     parser.add_argument('-s', default=500, help="Size of queue")
+    parser.add_argument('-t', '--es_timeout', default=100, help="Elasticsearch timeout")
     parser.add_argument('-meta', default={}, type=json.loads, help="Metadata to add to records")
     # Parse arguments and call evtx to elk class
     args = parser.parse_args()
-    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta)
+    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout)
