@@ -7,10 +7,23 @@ from collections import OrderedDict
 from datetime import datetime
 
 from Evtx.Evtx import FileHeader
+from pprint import pprint
 from Evtx.Views import evtx_file_xml_view
 from elasticsearch import Elasticsearch, helpers
 import xmltodict
 import sys
+
+
+###GlobalVariables###
+events_metadata_config = {}
+#####################
+
+
+def load_events_metadata_from_config(config_file_path, win_events_meta_data_key='win_events_meta_data'):
+    global events_metadata_config
+    print('Path to config file: ' + config_file_path)
+    events_metadata_config = json.load(open(config_file_path))[win_events_meta_data_key]
+    print('Win events metadata loaded from ' + config_file_path)
 
 
 class EvtxToElk:
@@ -22,6 +35,47 @@ class EvtxToElk:
         except:
             print(traceback.print_exc())
             return False
+
+    @staticmethod
+    def add_meta_data(log_dict):
+        global events_metadata_config
+        log_dict = dict(log_dict)
+        
+        log_channel = ''
+        log_provider_name = ''
+        log_event_id = ''
+        
+        if 'Event' in log_dict:
+            log_channel = log_dict['Event']['System']['Channel']
+            log_provider_name = log_dict['Event']['System']['Provider']['@Name']
+            log_event_id = log_dict['Event']['System']['EventID']['#text']
+        else:
+            temp = {'Event': log_dict, '@timestamp': log_dict['System']['TimeCreated']['@SystemTime']}
+            log_dict = temp
+            log_channel = log_dict['Event']['System']['Channel']
+            log_provider_name = log_dict['Event']['System']['Provider']['@Name']
+            log_event_id = log_dict['Event']['System']['EventID']['#text']
+
+        event_meta_description = ''
+        event_meta_extra_info = '###!!!Completely Unknown'
+
+        if log_channel in events_metadata_config:
+            if log_event_id in events_metadata_config[log_channel]:
+                event_meta_description = events_metadata_config[log_channel][log_event_id]
+            else:
+                event_meta_extra_info = '###!!!Event ID under Channel is unknown'
+                if log_event_id in events_metadata_config:
+                    event_meta_description = events_metadata_config[log_event_id]
+                else: event_meta_extra_info = '###!!!Completely Unknown'
+
+        log_dict['event_meta_description'] = event_meta_description
+        log_dict['event_meta_extra_info'] = event_meta_extra_info
+
+        #print('Printing log')
+        #pprint(log_dict)
+        #print('Log has been printed')
+        return log_dict
+
 
     @staticmethod
     def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100):
@@ -93,10 +147,11 @@ class EvtxToElk:
                         #    "metadata": metadata
                         #})
                         #bulk_queue.append(event_record)
+
                         bulk_queue.append({
                             "_index": elk_index,
                             "_type": elk_index,
-                            "body": json.loads(json.dumps(log_line)),
+                            "body": json.loads(json.dumps(EvtxToElk.add_meta_data(log_line))),
                             "metadata": metadata
                         })
 
@@ -137,6 +192,8 @@ if __name__ == "__main__":
     parser.add_argument('-s', default=500, help="Size of queue")
     parser.add_argument('-t', '--es_timeout', default=100, help="Elasticsearch timeout")
     parser.add_argument('-meta', default={}, type=json.loads, help="Metadata to add to records")
+    parser.add_argument('-c', '--config_file_path', default='config.json', help='Path to config file')
     # Parse arguments and call evtx to elk class
     args = parser.parse_args()
+    load_events_metadata_from_config(args.config_file_path)
     EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout)
