@@ -98,6 +98,7 @@ class EvtxToElk:
                             date = datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f")
                         log_line['@timestamp'] = str(date.isoformat())
                         log_line["Event"]["System"]["TimeCreated"]["@SystemTime"] = str(date.isoformat())
+                        log_line["FileName"] = str(filename)
 
                         # Process the data field to be searchable
                         data = ""
