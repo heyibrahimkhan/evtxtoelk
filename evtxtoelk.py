@@ -87,20 +87,21 @@ class EvtxToElk:
         return log_dict
 
 
-def get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing):
-    if testing == "1": return None
-    es_auth = ""
-    es = ""
-    if es_user != "" and es_pass != "":
-        es_auth = "{0}:{1}@".format(es_user, es_pass)
-    return Elasticsearch(hosts=['{0}{1}:{2}'.format(es_auth, elk_ip, elk_port)], timeout=es_timeout)
+    @staticmethod
+    def get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing):
+        if testing == "1": return None
+        es_auth = ""
+        es = ""
+        if es_user != "" and es_pass != "":
+            es_auth = "{0}:{1}@".format(es_user, es_pass)
+        return Elasticsearch(hosts=['{0}{1}:{2}'.format(es_auth, elk_ip, elk_port)], timeout=es_timeout)
 
 
     @staticmethod
-    def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100, es_user, es_pass, testing):
+    def evtx_to_elk(filename, elk_ip, es_user, es_pass, testing, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100):
         global count_logs_sent
         bulk_queue = []
-        es = get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing)
+        es = EvtxToElk.get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing)
         with open(filename) as infile:
             with contextlib.closing(mmap.mmap(infile.fileno(), 0, access=mmap.ACCESS_READ)) as buf:
                 fh = FileHeader(buf, 0x0)
@@ -179,7 +180,7 @@ def get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing):
                         if len(bulk_queue) == bulk_queue_len_threshold:
                             print('Bulkingrecords to ES: ' + filename + ':' + str(len(bulk_queue)))
                             # start parallel bulking to ElasticSearch, default 500 chunks;
-                            if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue):
+                            if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue, testing):
                                 bulk_queue = []
                             else:
                                 print('Failed to bulk data to Elasticsearch')
@@ -213,11 +214,12 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--es_pass', default="", required=None, help="Password to ES instance")
     parser.add_argument('-i', default="hostlogs", help="ELK index to load data into")
     parser.add_argument('-s', default=500, help="Size of queue")
-    parser.add_argument('-t', '--es_timeout', default=100, help="Elasticsearch timeout")
+    parser.add_argument('-et', '--es_timeout', default=100, help="Elasticsearch timeout")
     parser.add_argument('-meta', default={}, type=json.loads, help="Metadata to add to records")
     parser.add_argument('-c', '--config_file_path', default='config.json', help='Path to config file')
     parser.add_argument('-t', '--testing', default="", required=None, help="empty means no testing. 1 means that this is a test and do not forward logs to ES")
     # Parse arguments and call evtx to elk class
     args = parser.parse_args()
     load_events_metadata_from_config(args.config_file_path)
-    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout, args.es_user, args.es_pass, args.testing)
+    if args.testing == "1": args.s = 10000
+    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, args.es_user, args.es_pass, args.testing, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout)
