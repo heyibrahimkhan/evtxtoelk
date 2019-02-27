@@ -28,7 +28,9 @@ def load_events_metadata_from_config(config_file_path, win_events_meta_data_key=
 
 class EvtxToElk:
     @staticmethod
-    def bulk_to_elasticsearch(es, bulk_queue):
+    def bulk_to_elasticsearch(es, bulk_queue, testing):
+        if testing == "1":
+            return True
         try:
             helpers.bulk(es, bulk_queue)
             return True
@@ -77,10 +79,19 @@ class EvtxToElk:
         return log_dict
 
 
+def get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing):
+    if testing == "1": return None
+    es_auth = ""
+    es = ""
+    if es_user != "" and es_pass != "":
+        es_auth = "{0}:{1}@".format(es_user, es_pass)
+    return Elasticsearch(hosts=['{0}{1}:{2}'.format(es_auth, elk_ip, elk_port)], timeout=es_timeout)
+
+
     @staticmethod
-    def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100):
+    def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100, es_user, es_pass, testing):
         bulk_queue = []
-        es = Elasticsearch(hosts=[elk_ip+':'+elk_port], timeout=es_timeout)
+        es = get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing)
         with open(filename) as infile:
             with contextlib.closing(mmap.mmap(infile.fileno(), 0, access=mmap.ACCESS_READ)) as buf:
                 fh = FileHeader(buf, 0x0)
@@ -188,13 +199,16 @@ if __name__ == "__main__":
     # Add arguments
     parser.add_argument('evtxfile', help="Evtx file to parse")
     parser.add_argument('elk_ip', default="localhost", help="IP of ELK instance")
-    parser.add_argument('-p', '--elk_port', default="9200", help="Port of ELK instance")
+    parser.add_argument('-ep', '--elk_port', default="9200", help="Port of ELK instance")
+    parser.add_argument('-u', '--es_user', default="", required=None, help="Username of ES instance")
+    parser.add_argument('-p', '--es_pass', default="", required=None, help="Password to ES instance")
     parser.add_argument('-i', default="hostlogs", help="ELK index to load data into")
     parser.add_argument('-s', default=500, help="Size of queue")
     parser.add_argument('-t', '--es_timeout', default=100, help="Elasticsearch timeout")
     parser.add_argument('-meta', default={}, type=json.loads, help="Metadata to add to records")
     parser.add_argument('-c', '--config_file_path', default='config.json', help='Path to config file')
+    parser.add_argument('-t', '--testing', default="", required=None, help="empty means no testing. 1 means that this is a test and do not forward logs to ES")
     # Parse arguments and call evtx to elk class
     args = parser.parse_args()
     load_events_metadata_from_config(args.config_file_path)
-    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout)
+    EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout, args.es_user, args.es_pass, args.testing)
