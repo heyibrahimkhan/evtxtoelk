@@ -123,7 +123,7 @@ class EvtxToElk:
 
                         # Process the data field to be searchable
                         data = ""
-                        if log_line.get("Event") is not None:
+                        if log_line.get("Event") is not None and testing != "1":
                             data = log_line.get("Event")
                             if log_line.get("Event").get("EventData") is not None:
                                 data = log_line.get("Event").get("EventData")
@@ -170,12 +170,14 @@ class EvtxToElk:
                         #})
                         #bulk_queue.append(event_record)
 
-                        bulk_queue.append({
-                            "_index": elk_index,
-                            "_type": elk_index,
-                            "body": json.loads(json.dumps(EvtxToElk.add_meta_data(log_line))),
-                            "metadata": metadata
-                        })
+                        if testing == "1": bulk_queue.append({})
+                        else:
+                            bulk_queue.append({
+                                "_index": elk_index,
+                                "_type": elk_index,
+                                "body": json.loads(json.dumps(EvtxToElk.add_meta_data(log_line))),
+                                "metadata": metadata
+                            })
 
                         if len(bulk_queue) == bulk_queue_len_threshold:
                             print('Bulkingrecords to ES: ' + filename + ':' + str(len(bulk_queue)))
@@ -196,7 +198,7 @@ class EvtxToElk:
                 # Check for any remaining records in the bulk queue
                 if len(bulk_queue) > 0:
                     print('Bulking final set of records to ES: ' + filename + ':' + str(len(bulk_queue)))
-                    if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue):
+                    if EvtxToElk.bulk_to_elasticsearch(es, bulk_queue, testing):
                         bulk_queue = []
                     else:
                         print('Failed to bulk data to Elasticsearch')
@@ -221,5 +223,4 @@ if __name__ == "__main__":
     # Parse arguments and call evtx to elk class
     args = parser.parse_args()
     load_events_metadata_from_config(args.config_file_path)
-    if args.testing == "1": args.s = 10000
     EvtxToElk.evtx_to_elk(args.evtxfile, args.elk_ip, args.es_user, args.es_pass, args.testing, elk_port=args.elk_port, elk_index=args.i, bulk_queue_len_threshold=int(args.s), metadata=args.meta, es_timeout=args.es_timeout)
