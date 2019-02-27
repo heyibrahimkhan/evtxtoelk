@@ -16,6 +16,7 @@ import sys
 
 ###GlobalVariables###
 events_metadata_config = {}
+count_logs_sent = 0
 #####################
 
 
@@ -29,14 +30,21 @@ def load_events_metadata_from_config(config_file_path, win_events_meta_data_key=
 class EvtxToElk:
     @staticmethod
     def bulk_to_elasticsearch(es, bulk_queue, testing):
+        global count_logs_sent
+        ret = True
         if testing == "1":
+            count_logs_sent += len(bulk_queue)
+            print('Total logs sent = {0}'.format(count_logs_sent))
             return True
         try:
             helpers.bulk(es, bulk_queue)
-            return True
+            count_logs_sent += len(bulk_queue)
+            print('Total logs sent = {0}'.format(count_logs_sent))
+            ret = True
         except:
             print(traceback.print_exc())
-            return False
+            ret = False
+        return ret
 
     @staticmethod
     def add_meta_data(log_dict):
@@ -90,6 +98,7 @@ def get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing):
 
     @staticmethod
     def evtx_to_elk(filename, elk_ip, elk_port='9200', elk_index="hostlogs", bulk_queue_len_threshold=500, metadata={}, es_timeout=100, es_user, es_pass, testing):
+        global count_logs_sent
         bulk_queue = []
         es = get_es_object(elk_ip, elk_port, es_timeout, es_user, es_pass, testing)
         with open(filename) as infile:
